@@ -14,32 +14,48 @@ const app = express();
 app.use(express.urlencoded());
 app.use(cookieParser());
 
-app.get('/', (req, res) => {
-    console.log(req.cookies);
-    res.send("Welcome to auth service!");
-});
+function hashxshalt(password, salt) {
+    return crypto.createHash("sha256")
+        .update(password)
+        .update(crypto.createHash("sha256").update(salt, "utf8").digest("hex"))
+        .digest("hex");
+}
+
 app.post('/registrate', (req, res) => {
-    db.all("SELECT login, password FROM users WHERE login = ?", [req.body.usr], (err, rows) => {
+    db.get("SELECT login, password FROM users WHERE login = ?", [req.body.usr], (err, row) => {
         if (err)
             throw err;
-        if (rows.length != 0)
+        if (row)
             res.sendStatus(400);
         else {
             const salt = crypto.randomBytes(16).toString('hex');
-            const hashed = crypto.createHash("sha256")
-                .update(req.body.pwd)
-                .update(crypto.createHash("sha256").update(salt, "utf8").digest("hex"))
-                .digest("hex");
+            const hashed = hashxshalt(req.body.pwd, salt);
             db.run("INSERT INTO users (login, password, salt) VALUES (?, ?, ?)", [req.body.usr, hashed, salt]);
             res.sendStatus(201);
         }
     });
 });
 app.post('/auth', (req, res) => {
-
+    db.get("SELECT login, password, salt FROM users WHERE login = ?", [req.body.usr], (err, row) => {
+        if (err)
+            throw err;
+        if (!row)
+            res.sendStatus(400);
+        else {
+            const hashed = hashxshalt(req.body.pwd, row.salt);
+            if (row.password == hashed)
+                res.sendStatus(200);
+            else res.sendStatus(403);
+        }
+    });
 });
 app.post('/refresh', (req, res) => {
 
+});
+
+app.get('/', (req, res) => {
+    console.log(req.cookies);
+    res.send("Welcome to auth service!");
 });
 
 app.listen(PORT, () => {
