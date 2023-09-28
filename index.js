@@ -61,30 +61,31 @@ app.post('/auth', (req, res) => {
         }
         // Проверка пароля
         const hashed = hashxshalt(req.body.pwd, row.salt);
-        if (row.password == hashed) {
-            const payload = { login: row.login };
-            res.cookie(ACCESS_TOK_NAME, jwt.sign(payload, ACCESS_TOK_SECRET, { expiresIn: "1h" }), { httpOnly: true });
-            res.cookie(REFRESH_TOK_NAME, jwt.sign(payload, REFRESH_TOK_SECRET, { expiresIn: "1m" }), { path: "/refresh", httpOnly: true });
-            res.sendStatus(200);
+        if (row.password != hashed) {
+            res.sendStatus(403);
+            return;
         }
-        else res.sendStatus(403);
+        const payload = { login: row.login };
+        res.cookie(ACCESS_TOK_NAME, jwt.sign(payload, ACCESS_TOK_SECRET, { expiresIn: "1h" }), { httpOnly: true });
+        res.cookie(REFRESH_TOK_NAME, jwt.sign(payload, REFRESH_TOK_SECRET, { expiresIn: "1m" }), { path: "/refresh", httpOnly: true });
+        res.sendStatus(200);
     });
 });
 app.post('/refresh', (req, res) => {
-    if (REFRESH_TOK_NAME in req.cookies) {
-        jwt.verify(req.cookies[REFRESH_TOK_NAME], REFRESH_TOK_SECRET, (err, payload) => {
-            if (err)
-                res.sendStatus(403);
-            else {
-                const new_payload = { login: payload.login };
-                res.cookie(ACCESS_TOK_NAME, jwt.sign(new_payload, ACCESS_TOK_SECRET, { expiresIn: "1h" }), { httpOnly: true });
-                res.cookie(REFRESH_TOK_NAME, jwt.sign(new_payload, REFRESH_TOK_SECRET, { expiresIn: "1m" }), { path: "/refresh", httpOnly: true });
-                res.sendStatus(200);
-            }
-        })
-    }
-    else
+    if (!(REFRESH_TOK_NAME in req.cookies)) {
         res.sendStatus(400);
+        return;
+    }
+    jwt.verify(req.cookies[REFRESH_TOK_NAME], REFRESH_TOK_SECRET, (err, payload) => {
+        if (err) {
+            res.sendStatus(403);
+            return;
+        }
+        const new_payload = { login: payload.login };
+        res.cookie(ACCESS_TOK_NAME, jwt.sign(new_payload, ACCESS_TOK_SECRET, { expiresIn: "1h" }), { httpOnly: true });
+        res.cookie(REFRESH_TOK_NAME, jwt.sign(new_payload, REFRESH_TOK_SECRET, { expiresIn: "1m" }), { path: "/refresh", httpOnly: true });
+        res.sendStatus(200);
+    });
 });
 
 app.get('/', (req, res) => {
