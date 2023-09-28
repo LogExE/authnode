@@ -90,7 +90,15 @@ app.post('/refresh', (req, res) => {
 
 app.get('/', (req, res) => {
     console.log(req.cookies);
-    res.send("Welcome to auth service!");
+    let msg = "root";
+    if (ACCESS_TOK_NAME in req.cookies) {
+        try {
+            const payload = jwt.verify(req.cookies[ACCESS_TOK_NAME], ACCESS_TOK_SECRET);
+            msg = `root (${payload.login})`;
+        } catch {
+        }
+    }
+    res.send(msg);
 });
 
 app.listen(PORT, () => {
@@ -98,6 +106,7 @@ app.listen(PORT, () => {
 });
 
 const cleanup = () => {
+    console.log("Завершаем работу...");
     db.close();
 };
 
