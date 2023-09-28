@@ -108,6 +108,7 @@ app.listen(PORT, () => {
 const cleanup = () => {
     console.log("Завершаем работу...");
     db.close();
+    process.exit(0);
 };
 
 process.on('SIGINT', cleanup);
