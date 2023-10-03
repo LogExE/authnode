@@ -50,11 +50,9 @@ app.post('/registrate', (req, res) => {
     });
 });
 
-function gen_tokens(payload) {
-    return [
-        jwt.sign(payload, ACCESS_TOK_SECRET, { expiresIn: "5m" }), { httpOnly: true },
-        jwt.sign(payload, REFRESH_TOK_SECRET, { expiresIn: "1h" }), { path: "/refresh", httpOnly: true }
-    ];
+function inject_tokens(res, payload) {
+    res.cookie(ACCESS_TOK_COOKIE, jwt.sign(payload, ACCESS_TOK_SECRET, { expiresIn: "5m" }), { httpOnly: true });
+    res.cookie(REFRESH_TOK_COOKIE, jwt.sign(payload, REFRESH_TOK_SECRET, { expiresIn: "1h" }), { path: "/refresh", httpOnly: true });
 }
 app.post('/auth', (req, res) => {
     db.get("SELECT login, password, salt FROM users WHERE login = ?", [req.body.usr], (err, row) => {
@@ -71,9 +69,7 @@ app.post('/auth', (req, res) => {
             return;
         }
         const payload = { login: row.login };
-        [access_tok, refresh_tok] = gen_tokens(payload);
-        res.cookie(ACCESS_TOK_COOKIE, access_tok);
-        res.cookie(REFRESH_TOK_COOKIE, refresh_tok);
+        inject_tokens(res, payload);
         res.sendStatus(200);
     });
 });
@@ -88,9 +84,7 @@ app.post('/refresh', (req, res) => {
             return;
         }
         const new_payload = { login: payload.login };
-        [access_tok, refresh_tok] = gen_tokens(new_payload);
-        res.cookie(ACCESS_TOK_COOKIE, access_tok);
-        res.cookie(REFRESH_TOK_COOKIE, refresh_tok);
+        inject_tokens(res, new_payload);
         res.sendStatus(200);
     });
 });
