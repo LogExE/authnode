@@ -7,27 +7,25 @@ const sqlite3 = require('sqlite3');
 const jwt = require('jsonwebtoken');
 
 const PORT = 3000
-const ACCESS_TOK_NAME = "Access-Token";
-const REFRESH_TOK_NAME = "Refresh-Token";
+const ACCESS_TOK_COOKIE = "Access-Token";
+const REFRESH_TOK_COOKIE = "Refresh-Token";
 
-if (!('ACCESS_TOK_SECRET' in process.env)) {
-    console.error("ACCESS_TOK_SECRET не указан!");
-    process.exit(1);
+let env_vars = {}
+for (let env_var of ['ACCESS_TOK_SECRET', 'REFRESH_TOK_SECRET']) {
+    if (!(env_var in process.env)) {
+        console.error(`Переменная окружающей среды ${env_var} не задана! Без нее сервис не запустится.`);
+        process.exit(1);
+    }
+    env_vars[env_var] = process.env[env_var];
 }
-const ACCESS_TOK_SECRET = process.env.ACCESS_TOK_SECRET;
-
-if (!('REFRESH_TOK_SECRET' in process.env)) {
-    console.error("REFRESH_TOK_SECRET не указан!");
-    process.exit(1);
-}
-const REFRESH_TOK_SECRET = process.env.REFRESH_TOK_SECRET;
+const { ACCESS_TOK_SECRET, REFRESH_TOK_SECRET } = env_vars;
 
 const db = new sqlite3.Database('data.db');
 db.run("CREATE TABLE IF NOT EXISTS users (login, password, salt)");
 
 const app = express();
-app.use(express.urlencoded());
-app.use(cookieParser());
+app.use(express.urlencoded()); // для доступа к элементам формы через req.body
+app.use(cookieParser()); // для доступа к печенькам через req.cookies
 
 function hashxshalt(password, salt) {
     return crypto.createHash("sha256")
@@ -51,6 +49,13 @@ app.post('/registrate', (req, res) => {
         res.sendStatus(201);
     });
 });
+
+function gen_tokens(payload) {
+    return [
+        jwt.sign(payload, ACCESS_TOK_SECRET, { expiresIn: "5m" }), { httpOnly: true },
+        jwt.sign(payload, REFRESH_TOK_SECRET, { expiresIn: "1h" }), { path: "/refresh", httpOnly: true }
+    ];
+}
 app.post('/auth', (req, res) => {
     db.get("SELECT login, password, salt FROM users WHERE login = ?", [req.body.usr], (err, row) => {
         if (err)
@@ -66,24 +71,26 @@ app.post('/auth', (req, res) => {
             return;
         }
         const payload = { login: row.login };
-        res.cookie(ACCESS_TOK_NAME, jwt.sign(payload, ACCESS_TOK_SECRET, { expiresIn: "1h" }), { httpOnly: true });
-        res.cookie(REFRESH_TOK_NAME, jwt.sign(payload, REFRESH_TOK_SECRET, { expiresIn: "1m" }), { path: "/refresh", httpOnly: true });
+        [access_tok, refresh_tok] = gen_tokens(payload);
+        res.cookie(ACCESS_TOK_COOKIE, access_tok);
+        res.cookie(REFRESH_TOK_COOKIE, refresh_tok);
         res.sendStatus(200);
     });
 });
 app.post('/refresh', (req, res) => {
-    if (!(REFRESH_TOK_NAME in req.cookies)) {
+    if (!(REFRESH_TOK_COOKIE in req.cookies)) {
         res.sendStatus(400);
         return;
     }
-    jwt.verify(req.cookies[REFRESH_TOK_NAME], REFRESH_TOK_SECRET, (err, payload) => {
+    jwt.verify(req.cookies[REFRESH_TOK_COOKIE], REFRESH_TOK_SECRET, (err, payload) => {
         if (err) {
             res.sendStatus(403);
             return;
         }
         const new_payload = { login: payload.login };
-        res.cookie(ACCESS_TOK_NAME, jwt.sign(new_payload, ACCESS_TOK_SECRET, { expiresIn: "1h" }), { httpOnly: true });
-        res.cookie(REFRESH_TOK_NAME, jwt.sign(new_payload, REFRESH_TOK_SECRET, { expiresIn: "1m" }), { path: "/refresh", httpOnly: true });
+        [access_tok, refresh_tok] = gen_tokens(new_payload);
+        res.cookie(ACCESS_TOK_COOKIE, access_tok);
+        res.cookie(REFRESH_TOK_COOKIE, refresh_tok);
         res.sendStatus(200);
     });
 });
@@ -91,11 +98,12 @@ app.post('/refresh', (req, res) => {
 app.get('/', (req, res) => {
     console.log(req.cookies);
     let msg = "root";
-    if (ACCESS_TOK_NAME in req.cookies) {
+    if (ACCESS_TOK_COOKIE in req.cookies) {
         try {
-            const payload = jwt.verify(req.cookies[ACCESS_TOK_NAME], ACCESS_TOK_SECRET);
+            const payload = jwt.verify(req.cookies[ACCESS_TOK_COOKIE], ACCESS_TOK_SECRET);
             msg = `root (${payload.login})`;
-        } catch {
+        } catch (err) {
+            msg = `root, access token error: \"${err.message}\"`;
         }
     }
     res.send(msg);
@@ -105,7 +113,7 @@ app.listen(PORT, () => {
     console.log(`Сервис запущен на порту ${PORT}`);
 });
 
-const cleanup = () => {
+function cleanup() {
     console.log("Завершаем работу...");
     db.close();
     process.exit(0);
